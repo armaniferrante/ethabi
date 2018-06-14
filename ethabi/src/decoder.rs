@@ -204,6 +204,22 @@ fn decode_param(param: &ParamType, slices: &[[u8; 32]], offset: usize) -> Result
 
 			Ok(result)
 		}
+		ParamType::Tuple(ref params) => {
+			let mut tokens = vec![];
+			let mut new_offset = offset;
+			for param in params.iter() {
+				let res = decode_param(param, &slices, new_offset)?;
+				new_offset = res.new_offset;
+				tokens.push(res.token);
+			}
+
+			let result = DecodeResult {
+				token: Token::Tuple(tokens),
+				new_offset,
+			};
+
+			Ok(result)
+		},
 	}
 }
 
@@ -509,6 +525,18 @@ mod tests {
         // these are the only ones that can be decoded from empty byte slice
         assert!(decode(&[ParamType::FixedBytes(0)], &[]).is_ok());
         assert!(decode(&[ParamType::FixedArray(Box::new(ParamType::Bool), 0)], &[]).is_ok());
+    }
+
+    #[test]
+	fn decode_tuple() {
+		let encoded = hex!("
+            0000000000000000000000001111111111111111111111111111111111111111
+			000000000000000000000000000000000000000000000000000000000000250f
+        ");
+		let address = Token::Address([0x11u8; 20].into());
+		let uint = Token::Uint(9487.into());
+		let expected = vec![Token::Tuple(vec![address, uint])];
+		let decoded = decode(&[ParamType::Tuple(vec![ParamType::Address, ParamType::Uint(256)])], &encoded).unwrap();
+		assert_eq!(decoded, expected);
 	}
 }
-
