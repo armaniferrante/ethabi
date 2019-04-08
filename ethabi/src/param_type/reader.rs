@@ -6,6 +6,7 @@ pub struct Reader;
 impl Reader {
 	/// Converts string to param type.
 	pub fn read(name: &str) -> Result<ParamType, Error> {
+        println!("Reading = {}", name);
 		// check if it is a fixed or dynamic array.
 		match name.chars().last() {
 			Some(']') => {
@@ -18,51 +19,93 @@ impl Reader {
 					.chars()
 					.rev()
 					.collect();
-			let count = name.chars().count();
-			if num.is_empty() {
-				// we already know it's a dynamic array!
-				let subtype = try!(Reader::read(&name[..count - 2]));
-				return Ok(ParamType::Array(Box::new(subtype)));
-			} else {
-				// it's a fixed array.
-				let len = try!(usize::from_str_radix(&num, 10));
-				let subtype = try!(Reader::read(&name[..count - num.len() - 2]));
-				return Ok(ParamType::FixedArray(Box::new(subtype), len));
+			    let count = name.chars().count();
+			    if num.is_empty() {
+				    // we already know it's a dynamic array!
+				    let subtype = try!(Reader::read(&name[..count - 2]));
+				    return Ok(ParamType::Array(Box::new(subtype)));
+			    } else {
+				    // it's a fixed array.
+				    let len = try!(usize::from_str_radix(&num, 10));
+				    let subtype = try!(Reader::read(&name[..count - num.len() - 2]));
+				    return Ok(ParamType::FixedArray(Box::new(subtype), len));
+                }
 			}
 			Some(')') => {
-				if name.chars().next() == Some('(') {
-					let mut subtypes = Vec::new();
-					let mut nested = 0isize;
-					let mut last_item = 1;
+                if !name.starts_with("tuple(") {
+                    return Err(ErrorKind::InvalidName(name.to_owned()).into());
+                }
 
-					for (pos, c) in name.chars().enumerate() {
-						match c {
-							'(' => {
-								nested += 1;
-							}
-							')' => {
-								nested -= 1;
-								if nested < 0 {
-									return Err(ErrorKind::InvalidName(name.to_owned()).into());
-								} else if nested == 0 {
-									let sub = &name[last_item..pos];
-									let subtype = Reader::read(sub)?;
-									subtypes.push(subtype);
-									last_item = pos + 1;
-								}
-							}
-							',' if nested == 1 => {
-								let sub = &name[last_item..pos];
-								let subtype = Reader::read(sub)?;
-								subtypes.push(subtype);
-								last_item = pos + 1;
-							}
-							_ => ()
-						}
-					}
-					return Ok(ParamType::Tuple(subtypes));
-				}
+				let mut subtypes = Vec::new();
+				let mut nested = 1;//isize;
+				let mut last_item = 6;
 
+                // TODO: This is obviously shit. Clean this up.
+                // Find the index of the first non-tuple element in the string.
+                loop {
+                    if !name[last_item..].starts_with("tuple(")  {
+                        break;
+                    }
+                    nested += 1;
+                    last_item += 6;
+                }
+
+                // Iterate through everything after tuple
+                let mut pos = last_item;
+                loop {
+                    // Loop Header.
+                    if pos >= name.len() {
+                        break;
+                    }
+                    let mut c = name[last_item..].chars().nth(pos-last_item).unwrap();
+
+                    // Loop body.
+                    if name[pos..].starts_with("tuple(") {
+                        nested += 1;
+                        // Next char after 'tuple('
+                        pos += 6;
+                    } else {
+                        match c {
+						    ')' => {
+							    nested -= 1;
+							    if nested < 0 {
+								    return Err(ErrorKind::InvalidName(name.to_owned()).into());
+							    } else if nested == 0 {
+								    let sub = &name[last_item..pos];
+								    let subtype = Reader::read(sub)?;
+								    subtypes.push(subtype);
+								    last_item = pos + 1;
+							    }
+						    }
+						    ',' if nested == 1 => {
+							    let sub = &name[last_item..pos];
+							    let subtype = Reader::read(sub)?;
+							    subtypes.push(subtype);
+							    last_item = pos + 1;
+						    }
+						    _ => ()
+					    }
+                        // Next char.
+                        pos += 1;
+                    }
+                }
+
+                // Use dynamic tuple if any of the inner types are dynamic.
+                let mut dynamic = false;
+                for t in &subtypes {
+                    match t {
+                        ParamType::Bytes => dynamic = true,
+                        ParamType::String => dynamic = true,
+                        ParamType::Array(_t) => dynamic = true,
+                        ParamType::Tuple(_t) => dynamic = true,
+                        _ => (),
+                    };
+                }
+                if dynamic {
+                    return Ok(ParamType::Tuple(subtypes));
+                } else {
+                    return Ok(ParamType::FixedTuple(subtypes));
+                }
 			}
 			_ => ()
 		}
@@ -129,10 +172,12 @@ mod tests {
 	}
 
 	#[test]
-	fn test_read_tuple_param() {
-		assert_eq!(Reader::read("(address,bool)").unwrap(), ParamType::Tuple(vec![ParamType::Address, ParamType::Bool]));
-		assert_eq!(Reader::read("(bool[3],uint256)").unwrap(), ParamType::Tuple(vec![ParamType::FixedArray(Box::new(ParamType::Bool), 3), ParamType::Uint(256)]));
-	}
+	fn test_read_fixed_tuple_param() {
+		assert_eq!(Reader::read("tuple(address,bool)").unwrap(), ParamType::FixedTuple(vec![ParamType::Address, ParamType::Bool]));
+		assert_eq!(Reader::read("tuple(bool[3],uint256)").unwrap(), ParamType::FixedTuple(vec![ParamType::FixedArray(Box::new(ParamType::Bool), 3), ParamType::Uint(256)]));
+		assert_eq!(Reader::read("tuple(address,bytes)").unwrap(), ParamType::Tuple(vec![ParamType::Address, ParamType::Bytes]));
+		assert_eq!(Reader::read("tuple(bool[3],bytes)").unwrap(), ParamType::Tuple(vec![ParamType::FixedArray(Box::new(ParamType::Bool), 3), ParamType::Bytes]));
+    }
 
 	#[test]
 	fn test_read_mixed_arrays() {
