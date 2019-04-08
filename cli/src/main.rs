@@ -18,9 +18,9 @@ use ethabi::token::{Token, Tokenizer, StrictTokenizer, LenientTokenizer};
 use ethabi::{encode, decode, Contract, Function, Event, Hash};
 use error::{Error, ResultExt};
 
-pub const ETHABI: &'static str = r#"
+pub const ETHABI: &str = r#"
 Ethereum ABI coder.
-  Copyright 2016-2017 Parity Technologies (UK) Limited
+  Copyright 2016-2018 Parity Technologies (UK) Limited
 
 Usage:
     ethabi encode function <abi-path> <function-name> [-p <param>]... [-l | --lenient]
@@ -64,11 +64,11 @@ fn main() {
 
 	match result {
 		Ok(s) => println!("{}", s),
-		Err(error) => print_err(error),
+		Err(error) => print_err(&error),
 	}
 }
 
-fn print_err(err: Error) {
+fn print_err(err: &Error) {
 	let message = err.iter()
 		.map(|e| e.to_string())
 		.filter(|e| !e.is_empty())
@@ -152,7 +152,7 @@ fn encode_params(types: &[String], values: &[String], lenient: bool) -> Result<S
 
 fn decode_call_output(path: &str, function: &str, data: &str) -> Result<String, Error> {
 	let function = load_function(path, function)?;
-	let data = data.from_hex().chain_err(|| "Expected <data> to be hex")?;
+	let data : Vec<u8> = data.from_hex().chain_err(|| "Expected <data> to be hex")?;
 	let tokens = function.decode_output(&data)?;
 	let types = function.outputs;
 
@@ -172,7 +172,7 @@ fn decode_params(types: &[String], data: &str) -> Result<String, Error> {
 		.map(|s| Reader::read(s))
 		.collect::<Result<_, _>>()?;
 
-	let data = data.from_hex().chain_err(|| "Expected <data> to be hex")?;
+	let data  : Vec<u8> = data.from_hex().chain_err(|| "Expected <data> to be hex")?;
 
 	let tokens = decode(&types, &data)?;
 
@@ -190,7 +190,7 @@ fn decode_params(types: &[String], data: &str) -> Result<String, Error> {
 fn decode_log(path: &str, event: &str, topics: &[String], data: &str) -> Result<String, Error> {
 	let event = load_event(path, event)?;
 	let topics: Vec<Hash> = topics.into_iter()
-		.map(|t| t.parse())
+		.map(|t| t.parse() )
 		.collect::<Result<_, _>>()?;
 	let data = data.from_hex().chain_err(|| "Expected <data> to be hex")?;
 	let decoded = event.parse_log((topics, data).into())?;

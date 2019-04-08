@@ -49,7 +49,7 @@ impl Event {
 	}
 
 	/// Creates topic filter
-	pub fn create_filter(&self, raw: RawTopicFilter) -> Result<TopicFilter> {
+	pub fn filter(&self, raw: RawTopicFilter) -> Result<TopicFilter> {
 		fn convert_token(token: Token, kind: &ParamType) -> Result<Hash> {
 			if !token.type_check(kind) {
 				return Err(ErrorKind::InvalidData.into());
@@ -161,7 +161,7 @@ impl Event {
 			.into_iter()
 			.map(|name| LogParam {
 				name: name.clone(),
-				value: named_tokens.get(&name).unwrap().clone()
+				value: named_tokens[&name].clone()
 			})
 			.collect();
 

@@ -18,18 +18,16 @@ impl Reader {
 					.chars()
 					.rev()
 					.collect();
-
-				let count = name.chars().count();
-				if num.len() == 0 {
-					// we already know it's a dynamic array!
-					let subtype = try!(Reader::read(&name[..count - 2]));
-					return Ok(ParamType::Array(Box::new(subtype)));
-				} else {
-					// it's a fixed array.
-					let len = try!(usize::from_str_radix(&num, 10));
-					let subtype = try!(Reader::read(&name[..count - num.len() - 2]));
-					return Ok(ParamType::FixedArray(Box::new(subtype), len));
-				}
+			let count = name.chars().count();
+			if num.is_empty() {
+				// we already know it's a dynamic array!
+				let subtype = try!(Reader::read(&name[..count - 2]));
+				return Ok(ParamType::Array(Box::new(subtype)));
+			} else {
+				// it's a fixed array.
+				let len = try!(usize::from_str_radix(&num, 10));
+				let subtype = try!(Reader::read(&name[..count - num.len() - 2]));
+				return Ok(ParamType::FixedArray(Box::new(subtype), len));
 			}
 			Some(')') => {
 				if name.chars().next() == Some('(') {

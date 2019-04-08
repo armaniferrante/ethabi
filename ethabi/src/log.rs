@@ -1,4 +1,10 @@
-use {Hash, Token, Bytes, Result};
+use {Hash, Token, Bytes, Result, TopicFilter};
+
+/// Common filtering functions that are available for any event.
+pub trait LogFilter {
+	/// Match any log parameters.
+	fn wildcard_filter(&self) -> TopicFilter;
+}
 
 /// trait common to things (events) that have an associated `Log` type
 /// that can be parsed from a `RawLog`
@@ -12,7 +18,7 @@ pub trait ParseLog {
 }
 
 /// Ethereum log.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct RawLog {
 	/// Indexed event params are represented as log topics.
 	pub topics: Vec<Hash>,
@@ -30,7 +36,7 @@ impl From<(Vec<Hash>, Bytes)> for RawLog {
 }
 
 /// Decoded log param.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct LogParam {
 	/// Decoded log name.
 	pub name: String,
@@ -39,7 +45,7 @@ pub struct LogParam {
 }
 
 /// Decoded log.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct Log {
 	/// Log params.
 	pub params: Vec<LogParam>,
