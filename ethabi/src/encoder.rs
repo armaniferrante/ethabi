@@ -37,6 +37,7 @@ enum Mediate {
 	Prefixed(Vec<[u8; 32]>),
 	FixedArray(Vec<Mediate>),
 	Array(Vec<Mediate>),
+	FixedTuple(Vec<Mediate>),
 	Tuple(Vec<Mediate>),
 }
 
@@ -45,8 +46,10 @@ impl Mediate {
 		match *self {
 			Mediate::Raw(ref raw) => 32 * raw.len() as u32,
 			Mediate::Prefixed(_) => 32,
-			Mediate::FixedArray(ref nes) | Mediate::Tuple(ref nes) => nes.iter().fold(0, |acc, m| acc + m.init_len()),
-			Mediate::Array(_) => 32,
+			Mediate::FixedArray(ref nes) | Mediate::FixedTuple(ref nes) => {
+                nes.iter().fold(0, |acc, m| acc + m.init_len())
+            }
+			Mediate::Array(_) | Mediate::Tuple(_) => 32,
 		}
 	}
 
@@ -54,8 +57,15 @@ impl Mediate {
 		match *self {
 			Mediate::Raw(_) => 0,
 			Mediate::Prefixed(ref pre) => pre.len() as u32 * 32,
-			Mediate::FixedArray(ref nes) | Mediate::Tuple(ref nes) => nes.iter().fold(0, |acc, m| acc + m.closing_len()),
-			Mediate::Array(ref nes) => nes.iter().fold(32, |acc, m| acc + m.init_len() + m.closing_len()),
+			Mediate::FixedArray(ref nes) | Mediate::FixedTuple(ref nes) => {
+				nes.iter().fold(0, |acc, m| acc + m.closing_len())
+			}
+			Mediate::Array(ref nes) => {
+				nes.iter().fold(32, |acc, m| acc + m.init_len() + m.closing_len())
+			}
+			Mediate::Tuple(ref nes) => {
+				nes.iter().fold(0, |acc, m| acc + m.init_len() + m.closing_len())
+			}
 		}
 	}
 
@@ -69,13 +79,13 @@ impl Mediate {
 	fn init(&self, suffix_offset: u32) -> Vec<[u8; 32]> {
 		match *self {
 			Mediate::Raw(ref raw) => raw.clone(),
-			Mediate::FixedArray(ref nes) | Mediate::Tuple(ref nes) => {
+			Mediate::FixedArray(ref nes) | Mediate::FixedTuple(ref nes) => {
 				nes.iter()
 					.enumerate()
 					.flat_map(|(i, m)| m.init(Mediate::offset_for(nes, i)))
 					.collect()
 			},
-			Mediate::Prefixed(_) | Mediate::Array(_) => {
+			Mediate::Prefixed(_) | Mediate::Array(_) | Mediate::Tuple(_) => {
 				vec![pad_u32(suffix_offset)]
 			}
 		}
@@ -85,7 +95,7 @@ impl Mediate {
 		match *self {
 			Mediate::Raw(_) => vec![],
 			Mediate::Prefixed(ref pre) => pre.clone(),
-			Mediate::FixedArray(ref nes) | Mediate::Tuple(ref nes) => {
+			Mediate::FixedArray(ref nes) | Mediate::FixedTuple(ref nes) => {
 				// offset is not taken into account, cause it would be counted twice
 				// fixed array is just raw representations of similar consecutive items
 				nes.iter()
@@ -96,7 +106,6 @@ impl Mediate {
 			Mediate::Array(ref nes) => {
 				// + 32 added to offset represents len of the array prepanded to closing
 				let prefix = vec![pad_u32(nes.len() as u32)].into_iter();
-
 				let inits = nes.iter()
 					.enumerate()
 					.flat_map(|(i, m)| m.init(Mediate::offset_for(nes, i)));
@@ -107,6 +116,17 @@ impl Mediate {
 
 				prefix.chain(inits).chain(closings).collect()
 			},
+            Mediate::Tuple(ref nes) => {
+				let inits = nes.iter()
+					.enumerate()
+					.flat_map(|(i, m)| m.init(Mediate::offset_for(nes, i)));
+
+				let closings = nes.iter()
+					.enumerate()
+					.flat_map(|(i, m)| m.closing(offset + Mediate::offset_for(nes, i)));
+
+				inits.chain(closings).collect()
+            }
 		}
 	}
 }
@@ -163,7 +183,14 @@ fn encode_token(token: &Token) -> Mediate {
 
 			Mediate::FixedArray(mediates)
 		},
-		Token::Tuple(ref tokens) => {
+		Token::FixedTuple(ref tokens) => {
+			let mediates = tokens.iter()
+				.map(encode_token)
+				.collect();
+
+			Mediate::FixedTuple(mediates)
+		},
+        Token::Tuple(ref tokens) => {
 			let mediates = tokens.iter()
 				.map(encode_token)
 				.collect();
@@ -590,12 +617,39 @@ mod tests {
 	fn encode_tuple() {
 		let address = Token::Address([0x11u8; 20].into());
 		let uint = Token::Uint(9487.into());
-		let tuple = Token::Tuple(vec![address, uint]);
+		let tuple = Token::FixedTuple(vec![address, uint]);
 		let encoded = encode(&vec![tuple]);
-		let expected = ("".to_owned() +
-			"0000000000000000000000001111111111111111111111111111111111111111" +
-			"000000000000000000000000000000000000000000000000000000000000250f").from_hex().unwrap();
+		let expected = hex!("
+			0000000000000000000000001111111111111111111111111111111111111111
+			000000000000000000000000000000000000000000000000000000000000250f
+        ").to_vec();
 		assert_eq!(encoded, expected);
 	}
-}
 
+    #[test]
+    fn encode_tuple_ethers() {
+        let owner = Token::Address(hex!("C486Ac4e99ab5325119eF938dd2CBeFeB481C8bE").into());
+        let signing_keys = Token::Array(vec![
+            Token::Address(hex!("C486Ac4e99ab5325119eF938dd2CBeFeB481C8bE").into()),
+            Token::Address(hex!("C486Ac4e99ab5325119eF938dd2CBeFeB481C8bE").into()),
+        ]);
+        let app_definition_address = Token::Address(hex!("C486Ac4e99ab5325119eF938dd2CBeFeB481C8bE").into());
+        let terms_hash =
+            Token::FixedBytes(hex!("1111111111111111111111111111111111111111111111111111111111111111").to_vec());
+        let default_timeout = Token::Uint(99.into());
+
+		let tuple = Token::Tuple(vec![
+            owner,
+            signing_keys,
+            app_definition_address,
+            terms_hash,
+            default_timeout,
+        ]);
+		let encoded = encode(&vec![tuple]);
+
+        let expected = hex!(
+            "0000000000000000000000000000000000000000000000000000000000000020000000000000000000000000c486ac4e99ab5325119ef938dd2cbefeb481c8be00000000000000000000000000000000000000000000000000000000000000a0000000000000000000000000c486ac4e99ab5325119ef938dd2cbefeb481c8be111111111111111111111111111111111111111111111111111111111111111100000000000000000000000000000000000000000000000000000000000000630000000000000000000000000000000000000000000000000000000000000002000000000000000000000000c486ac4e99ab5325119ef938dd2cbefeb481c8be000000000000000000000000c486ac4e99ab5325119ef938dd2cbefeb481c8be").to_vec();
+
+        assert_eq!(encoded, expected);
+    }
+}

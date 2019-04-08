@@ -36,4 +36,24 @@ mod tests {
 	fn test_signature() {
 		assert_eq!(hex!("cdcd77c0"), short_signature("baz", &[ParamType::Uint(32), ParamType::Bool]));
 	}
+
+    #[test]
+    fn test_tuple_signature() {
+        let sig = short_signature("setState", &[
+            ParamType::Tuple(vec![
+                ParamType::Address,
+                ParamType::Array(Box::new(ParamType::Address)),
+                ParamType::Address,
+                ParamType::Uint(256),
+            ]),
+            ParamType::Tuple(vec![
+                ParamType::FixedBytes(32),
+                ParamType::Uint(256),
+                ParamType::Uint(256),
+                ParamType::Bytes,
+            ])
+        ]);
+
+        assert_eq!(hex!("458dc2d8"), sig);
+    }
 }

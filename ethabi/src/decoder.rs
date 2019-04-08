@@ -204,7 +204,23 @@ fn decode_param(param: &ParamType, slices: &[[u8; 32]], offset: usize) -> Result
 
 			Ok(result)
 		}
-		ParamType::Tuple(ref params) => {
+		ParamType::FixedTuple(ref params) => {
+			let mut tokens = vec![];
+			let mut new_offset = offset;
+			for param in params.iter() {
+				let res = decode_param(param, &slices, new_offset)?;
+				new_offset = res.new_offset;
+				tokens.push(res.token);
+			}
+
+			let result = DecodeResult {
+				token: Token::FixedTuple(tokens),
+				new_offset,
+			};
+
+			Ok(result)
+		},
+        ParamType::Tuple(ref params) => {
 			let mut tokens = vec![];
 			let mut new_offset = offset;
 			for param in params.iter() {
@@ -507,7 +523,6 @@ mod tests {
 		assert_eq!(decoded, expected);
 	}
 
-	#[test]
 	fn decode_from_empty_byte_slice() {
         // these can NOT be decoded from empty byte slice
         assert!(decode(&[ParamType::Address], &[]).is_err());
